@@ -3,10 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
-
 	"github.com/go-redis/redis/v9"
 	"go.uber.org/zap"
+	"os"
+	"strconv"
+	"time"
 
 	"mqueue/pkg/api"
 	"mqueue/pkg/utils"
@@ -42,8 +43,21 @@ func main() {
 		logger.Error("GROUP env var is not set\n")
 		return
 	}
-	ctx := context.TODO()
 
+	var timeout int
+	timeoutS := os.Getenv("TIMEOUT")
+	if timeoutS != "" {
+		value, err := strconv.Atoi(timeoutS)
+		if err != nil {
+			logger.Error("failed to parse TIMEOUT: ", err)
+			return
+		}
+		timeout = value
+	} else {
+		timeout = 0
+	}
+
+	ctx := context.TODO()
 	event := api.NewEvent(client)
 	err := event.CreateGroup(ctx, stream, group)
 	if err != nil && !api.GroupAlreadyExists(err) {
@@ -52,8 +66,12 @@ func main() {
 	}
 
 	for {
-		messages, err := event.ReadByGroup(ctx, stream, group)
+		messages, err := event.ReadByGroup(ctx, stream, group, time.Duration(timeout)*time.Second)
 		if err != nil {
+			if api.TimeoutExceeded(err) {
+				logger.Infof("waiting new messages timeout %ds exceeded", timeout)
+				return
+			}
 			logger.Error("failed to read event: ", err)
 			return
 		}

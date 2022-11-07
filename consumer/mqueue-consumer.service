@@ -1,0 +1,11 @@
+[Unit]
+Description=One of the mqueue consumer
+Requires=network.target
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/sa-consumer
+
+[Install]
+WantedBy=multi-user.target

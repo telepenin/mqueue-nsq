@@ -3,6 +3,7 @@ module mqueue
 go 1.17
 
 require (
+	github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf
 	github.com/go-redis/redis/v9 v9.0.0-rc.1
 	github.com/tjarratt/babble v0.0.0-20210505082055-cbca2a4833c1
 	github.com/vmihailenco/msgpack/v5 v5.3.5

@@ -2,8 +2,8 @@ package api
 
 import (
 	"context"
-
 	"github.com/go-redis/redis/v9"
+	"time"
 
 	"mqueue/pkg/event"
 )
@@ -23,13 +23,13 @@ func (e *Event) Create(ctx context.Context, stream string, message *event.Event)
 	}).Result()
 }
 
-func (e *Event) ReadByGroup(ctx context.Context, stream string, group string) ([]redis.XMessage, error) {
+func (e *Event) ReadByGroup(ctx context.Context, stream string, group string, timeout time.Duration) ([]redis.XMessage, error) {
 	val, err := e.client.XReadGroup(ctx, &redis.XReadGroupArgs{
 		Streams:  []string{stream, ">"},
 		Group:    group,
 		Consumer: "consumer",
 		Count:    10,
-		Block:    0,
+		Block:    timeout,
 	}).Result()
 	if err != nil {
 		return nil, err
@@ -48,4 +48,8 @@ func (e *Event) CreateGroup(ctx context.Context, stream string, group string) er
 
 func GroupAlreadyExists(err error) bool {
 	return err.Error() == "BUSYGROUP Consumer Group name already exists"
+}
+
+func TimeoutExceeded(err error) bool {
+	return err.Error() == "redis: nil"
 }

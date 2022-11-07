@@ -15,8 +15,9 @@ down:
 .PHONY: build
 build:
 	@echo "---- Building Application ----"
-	@go build -o consumer consumer/*.go
-	@go build -o producer producer/*.go
+	@go build -a -o mqueue-consumer consumer/*.go
+	#@go build -o mqueue-producer producer/*.go
+	#@go build -o mqueue-wakeup wakeup/*.go
 
 .PHONY: producer
 producer:
@@ -34,6 +35,16 @@ wakeup:
 	@echo "---- Starting WakeUp service ----"
 	@go run wakeup/*.go
 
-.PHONY: creategroup
-creategroup:
-	@echo "---- Creating Group ----"
+.PHONY: systemd-socket-activate-consumer
+systemd-socket-activate-consumer: build
+	@echo "---- Starting Socket Activation ----"
+	systemd-socket-activate -l /var/run/sa-consumer.sock \
+		-E STREAM=${STREAM} \
+		-E GROUP=${GROUP} \
+		-E TIMEOUT=${TIMEOUT} \
+		./mqueue-consumer
+
+.PHONY: wakeup-consumer
+wakeup-consumer:
+	@echo "---- Wake up consumer through socket ----"
+	@printf WAKEUP | socat UNIX-CONNECT:/var/run/sa-consumer.sock -
