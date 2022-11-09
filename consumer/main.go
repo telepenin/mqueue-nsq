@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"github.com/go-redis/redis/v9"
+	"github.com/pkg/errors"
 	"go.uber.org/zap"
+	"io"
+	"net"
 	"os"
 	"strconv"
 	"time"
@@ -57,6 +60,16 @@ func main() {
 		timeout = 0
 	}
 
+	go func() {
+		data, err := ensureSocketIsEmpty(logger)
+		if err != nil {
+			logger.Error("failed to read from socket: ", err)
+		}
+		if data == nil {
+			logger.Info("no sockets available")
+		}
+	}()
+
 	ctx := context.TODO()
 	event := api.NewEvent(client)
 	err := event.CreateGroup(ctx, stream, group)
@@ -86,4 +99,50 @@ func main() {
 			}
 		}
 	}
+}
+
+// ensureSocketIsEmpty trying to read data from socket every 0.2 seconds
+// systemd relaunches the service if the data from socket has not read
+func ensureSocketIsEmpty(logger *zap.SugaredLogger) ([]byte, error) {
+	sock, err := utils.GetSystemdSocket()
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get systemd socket")
+	}
+	if sock == nil {
+		// no sockets available
+		return nil, nil
+	}
+	defer sock.Close()
+
+	for {
+		data, err := readFromSocket(sock)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to read from socket")
+		}
+		if data != nil {
+			logger.Debugf("data read from socket: %s", string(data))
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+func readFromSocket(sock net.Listener) ([]byte, error) {
+	conn, err := sock.Accept()
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to accept connection")
+	}
+	defer conn.Close()
+
+	data := make([]byte, 1024)
+	for {
+		buf := make([]byte, 1024) // 1Kb buffer should be enough for our purposes
+		_, err = conn.Read(buf)
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
+			break
+		} else if err != nil {
+			return nil, errors.Wrap(err, "failed to read from socket")
+		}
+		data = append(data, buf...)
+	}
+	return data, nil
 }

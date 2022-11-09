@@ -95,7 +95,8 @@ func wakeup(sockAddr string) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to connect to unix socket")
 	}
-	_, err = conn.Write([]byte("HI"))
+	defer conn.Close()
+	_, err = conn.Write([]byte("WAKEUP"))
 	if err != nil {
 		return errors.Wrap(err, "failed to write to unix socket")
 	}

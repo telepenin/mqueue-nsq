@@ -19,6 +19,11 @@ build:
 	#@go build -o mqueue-producer producer/*.go
 	#@go build -o mqueue-wakeup wakeup/*.go
 
+copy:
+	@echo "---- Copying Application ----"
+	@cp -f mqueue-consumer /usr/local/bin/sa-consumer
+
+
 .PHONY: producer
 producer:
 	@echo "---- Starting Producer ----"
@@ -27,7 +32,6 @@ producer:
 .PHONY: consumer
 consumer:
 	@echo "---- Starting Consumer ----"
-	@export GROUP=group1
 	@go run consumer/*.go
 
 .PHONY: wakeup
@@ -38,7 +42,7 @@ wakeup:
 .PHONY: systemd-socket-activate-consumer
 systemd-socket-activate-consumer: build
 	@echo "---- Starting Socket Activation ----"
-	systemd-socket-activate -l /var/run/sa-consumer.sock \
+	systemd-socket-activate -l /var/run/mqueue-consumer.socket \
 		-E STREAM=${STREAM} \
 		-E GROUP=${GROUP} \
 		-E TIMEOUT=${TIMEOUT} \
@@ -47,4 +51,4 @@ systemd-socket-activate-consumer: build
 .PHONY: wakeup-consumer
 wakeup-consumer:
 	@echo "---- Wake up consumer through socket ----"
-	@printf WAKEUP | socat UNIX-CONNECT:/var/run/sa-consumer.sock -
+	@printf WAKEUP | socat UNIX-CONNECT:/var/run/mqueue-consumer.socket -

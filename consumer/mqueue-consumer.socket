@@ -1,5 +1,14 @@
+[Unit]
+Description=Socket activation consumer socket
+#AssertPathExists=/var/run
+PartOf=mqueue-consumer.service
+
 [Socket]
-ListenDatagram=/var/run/mqueue-consumer.socket
+ListenStream=/run/mqueue-consumer.socket
+SocketUser=root
+SocketGroup=root
+SocketMode=0666
+DirectoryMode=0755
 
 [Install]
 WantedBy=sockets.target
