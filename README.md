@@ -1,6 +1,6 @@
 ## How to prepare
 
-- start redis in docker
+Start redis in docker
 
 ```bash
 make up
@@ -46,40 +46,31 @@ Consumer will wait new messages for 30 seconds. If no messages will be received,
 It uses systemd-socket-activate to listen on a socket and launch consumer when new data arriving in socket.
 
 ```bash
-STREAM=foo GROUP=1 TIMEOUT=30 make systemd-socket-activate-consumer
+STREAM=foo TIMEOUT=30 make systemd-socket-activate-consumer
 ```
 
 Starts the consumer with systemd socket activation. The consumer will be started by systemd when a new data is received
-on the socket /var/run/sa-consumer.sock.
+on the socket `/var/run/sa-consumer.sock`.
 
 ## Run wakeup service
 
-```bash
-TARGETS=foo:/var/run/sa-consumer.sock make wakeup
-```
-
-Where is:
-
-- `foo` - stream name
-- `/var/run/sa-consumer.sock` - socket path
-
-Targets could be combined:
+Subscribe for new messages and send wakeup signal (open connect to socket) to the consumer.
 
 ```bash
-TARGETS=foo:/var/run/sa-consumer.sock,bar:/var/run/sa-consumer.sock,foo:/var/run/other-sa-consumer.sock make wakeup
+make wakeup
 ```
+
+Under the hood it collects all streams and their groups from redis streams, checks the name of group for valid socket file type.
+If it exists -> using it for further wakeup if new messages in stream will appear.
 
 ## Run with systemd
 
 ```bash
-cp systemd/sa-consumer.service /etc/systemd/system/
-cp systemd/sa-consumer.socket /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable sa-consumer.socket
-systemctl enable sa-consumer.service
-systemctl start sa-consumer.socket
-
-TARGETS=foo:/var/run/mqueue-consumer.socket make wakeup
+make reload-systemd-consumer
+systemctl enable mqueue-consumer.socket
+systemctl enable mqueue-consumer.service
+systemctl start mqueue-consumer.socket
+make wakeup
 ```
 
 Services are ready to receive new messages, to generate a new one - run producer.

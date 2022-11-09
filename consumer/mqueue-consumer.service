@@ -7,12 +7,10 @@ After=network.target
 Type=simple
 ExecStart=/usr/local/bin/sa-consumer
 Environment="STREAM=foo"
-Environment="GROUP=2"
 Environment="TIMEOUT=30"
 StandardOutput=journal
 StandardError=journal
 Restart=on-failure
-#RemainAfterExit=yes
 
 [Install]
 WantedBy=multi-user.target

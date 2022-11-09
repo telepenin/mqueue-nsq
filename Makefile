@@ -2,12 +2,10 @@
 
 REDIS_HOST ?= localhost
 
-.PHONY: up
 up:
 	@echo "Starting server..."
 	@docker-compose up -d
 
-.PHONY: down
 down:
 	@echo "Stopping server..."
 	@docker-compose down
@@ -23,6 +21,11 @@ copy:
 	@echo "---- Copying Application ----"
 	@cp -f mqueue-consumer /usr/local/bin/sa-consumer
 
+reload-systemd-consumer:
+	@echo "---- Copying Systemd Files & Reload ----"
+	/usr/bin/cp -f consumer/mqueue-consumer.service /etc/systemd/system/; \
+    /usr/bin/cp -f consumer/mqueue-consumer.socket /etc/systemd/system/; \
+    systemctl daemon-reload;
 
 .PHONY: producer
 producer:
@@ -39,16 +42,15 @@ wakeup:
 	@echo "---- Starting WakeUp service ----"
 	@go run wakeup/*.go
 
-.PHONY: systemd-socket-activate-consumer
-systemd-socket-activate-consumer: build
+systemd-socket-activate-consumer: #build
 	@echo "---- Starting Socket Activation ----"
-	systemd-socket-activate -l /var/run/mqueue-consumer.socket \
+	systemd-socket-activate -l /run/mqueue-consumer.socket \
 		-E STREAM=${STREAM} \
-		-E GROUP=${GROUP} \
 		-E TIMEOUT=${TIMEOUT} \
 		./mqueue-consumer
 
-.PHONY: wakeup-consumer
 wakeup-consumer:
 	@echo "---- Wake up consumer through socket ----"
 	@printf WAKEUP | socat UNIX-CONNECT:/var/run/mqueue-consumer.socket -
+
+

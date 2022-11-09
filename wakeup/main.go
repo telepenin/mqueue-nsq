@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
-	"strings"
 	"sync"
 
 	"github.com/go-redis/redis/v9"
@@ -20,6 +18,11 @@ var (
 	client *redis.Client
 )
 
+type consumer struct {
+	Name   string
+	Stream string
+}
+
 func init() {
 	var err error
 	client, err = utils.NewRedisClient()
@@ -33,34 +36,38 @@ func main() {
 	defer zapLogger.Sync()
 	logger := zapLogger.Sugar()
 
-	logger.Info("consumer is starting...")
+	logger.Info("wakeup service is starting...")
+	event := api.NewEvent(client)
 
-	targets := os.Getenv("TARGETS")
-	if targets == "" {
-		logger.Error("TARGETS env var is not set\n")
+	ctx := context.TODO()
+	consumers, err := listConsumers(ctx, event)
+	if err != nil {
+		logger.Error("failed to list consumers: ", err)
 		return
 	}
+	if len(consumers) == 0 {
+		logger.Info("no consumers found")
+		return
+	}
+	logger.Debugw("consumers is found", "consumers", consumers)
 
 	wg := sync.WaitGroup{}
 	group := "wakeup"
-	ctx := context.TODO()
-	event := api.NewEvent(client)
-	for _, value := range strings.Split(targets, ",") {
-		v := strings.SplitN(value, ":", 2)
-		stream, sockAddr := v[0], v[1]
-
-		err := event.CreateGroup(ctx, stream, group)
+	for _, c := range consumers {
+		// creating wakeup group for each stream
+		err := event.CreateGroup(ctx, c.Stream, group)
 		if err != nil && !api.GroupAlreadyExists(err) {
 			logger.Error("failed to create group: ", err)
 			return
 		}
 
 		wg.Add(1)
-		go func(stream string) {
+
+		go func(stream, addr string) {
 			defer wg.Done()
-			logger.Infow("wakeup for stream is starting...", "stream", stream, "sockAddr", sockAddr)
+			logger.Infow("wakeup for stream is starting...", "stream", stream, "addr", addr)
 			for {
-				logger.Infow("waiting for events", "stream", stream, "sockAddr", sockAddr)
+				logger.Infow("waiting for events", "stream", stream, "addr", addr)
 				messages, err := event.ReadByGroup(ctx, stream, group, 0)
 				if err != nil {
 					logger.Error("failed to read event: ", err)
@@ -68,12 +75,12 @@ func main() {
 				}
 				logger.Debugln("messages: ", len(messages))
 				if len(messages) > 0 {
-					logger.Infow("Hei! Hei! Hei! Wakeup! New messages is arriving", "stream", stream, "sockAddr", sockAddr)
-					if err := wakeup(sockAddr); err != nil {
+					logger.Infow("Wakeup! New messages is arriving", "stream", stream, "addr", addr)
+					if err := wakeup(addr); err != nil {
 						logger.Error("failed to wakeup: ", err)
 						continue
 					}
-					logger.Infow("wakeup is done", "stream", stream, "sockAddr", sockAddr)
+					logger.Infow("wakeup is done", "stream", stream, "addr", addr)
 				}
 				// ack messages
 				for _, v := range messages {
@@ -85,20 +92,43 @@ func main() {
 					}
 				}
 			}
-		}(stream)
+		}(c.Stream, c.Name)
 	}
 	wg.Wait()
 }
 
-func wakeup(sockAddr string) error {
-	conn, err := net.Dial("unix", sockAddr)
+// wakeup open connection to the given socket address.
+func wakeup(addr string) error {
+	conn, err := net.Dial("unix", addr)
 	if err != nil {
 		return errors.Wrap(err, "failed to connect to unix socket")
 	}
 	defer conn.Close()
-	_, err = conn.Write([]byte("WAKEUP"))
-	if err != nil {
-		return errors.Wrap(err, "failed to write to unix socket")
-	}
 	return nil
+}
+
+// listConsumers returns list of consumers (name - addr of socket, stream).
+// it collects redis streams and their groups
+// checks the group name as a valid socket file
+func listConsumers(ctx context.Context, event *api.Event) ([]consumer, error) {
+	streams, err := event.ListStream(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to list streams")
+	}
+	consumers := make([]consumer, 0)
+	for _, stream := range streams {
+		groups, err := event.ListGroup(ctx, stream)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to list groups for %s", stream)
+		}
+		for _, name := range groups {
+			if utils.IsSocket(name) {
+				consumers = append(consumers, consumer{
+					Name:   name,
+					Stream: stream,
+				})
+			}
+		}
+	}
+	return consumers, nil
 }

@@ -1,6 +1,6 @@
 [Unit]
 Description=Socket activation consumer socket
-#AssertPathExists=/var/run
+AssertPathExists=/var/run
 PartOf=mqueue-consumer.service
 
 [Socket]

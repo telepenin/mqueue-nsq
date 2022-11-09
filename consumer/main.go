@@ -41,12 +41,7 @@ func main() {
 		return
 	}
 
-	group := os.Getenv("GROUP")
-	if group == "" {
-		logger.Error("GROUP env var is not set\n")
-		return
-	}
-
+	var group string
 	var timeout int
 	timeoutS := os.Getenv("TIMEOUT")
 	if timeoutS != "" {
@@ -60,19 +55,34 @@ func main() {
 		timeout = 0
 	}
 
-	go func() {
-		data, err := ensureSocketIsEmpty(logger)
-		if err != nil {
-			logger.Error("failed to read from socket: ", err)
+	sock, err := utils.GetSystemdSocket()
+	if err != nil {
+		logger.Error("failed to get systemd socket: ", err)
+		return
+	}
+	if sock == nil {
+		logger.Info("no sockets available")
+		group = os.Getenv("GROUP")
+		if group == "" {
+			logger.Error("GROUP env var is not set\n")
+			return
 		}
-		if data == nil {
-			logger.Info("no sockets available")
-		}
-	}()
+	} else {
+		defer sock.Close()
+		group = sock.Addr().String() // use name of group as socket filename
+
+		go func() {
+			if err = ensureSocketIsEmpty(sock); err != nil {
+				logger.Error("failed to read from socket: ", err)
+			}
+		}()
+	}
+
+	logger.Debugf("group: %s, stream: %s, timeout: %ds", group, stream, timeout)
 
 	ctx := context.TODO()
 	event := api.NewEvent(client)
-	err := event.CreateGroup(ctx, stream, group)
+	err = event.CreateGroup(ctx, stream, group)
 	if err != nil && !api.GroupAlreadyExists(err) {
 		logger.Error("failed to create group: ", err)
 		return
@@ -103,46 +113,31 @@ func main() {
 
 // ensureSocketIsEmpty trying to read data from socket every 0.2 seconds
 // systemd relaunches the service if the data from socket has not read
-func ensureSocketIsEmpty(logger *zap.SugaredLogger) ([]byte, error) {
-	sock, err := utils.GetSystemdSocket()
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get systemd socket")
-	}
-	if sock == nil {
-		// no sockets available
-		return nil, nil
-	}
-	defer sock.Close()
-
+func ensureSocketIsEmpty(sock net.Listener) error {
 	for {
-		data, err := readFromSocket(sock)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to read from socket")
-		}
-		if data != nil {
-			logger.Debugf("data read from socket: %s", string(data))
+		if err := readFromSocket(sock); err != nil {
+			return errors.Wrap(err, "failed to read from socket")
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
 }
 
-func readFromSocket(sock net.Listener) ([]byte, error) {
+// readFromSocket reads all data from socket
+func readFromSocket(sock net.Listener) error {
 	conn, err := sock.Accept()
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to accept connection")
+		return errors.Wrap(err, "failed to accept connection")
 	}
 	defer conn.Close()
 
-	data := make([]byte, 1024)
 	for {
 		buf := make([]byte, 1024) // 1Kb buffer should be enough for our purposes
 		_, err = conn.Read(buf)
 		if err == io.EOF || err == io.ErrUnexpectedEOF {
 			break
 		} else if err != nil {
-			return nil, errors.Wrap(err, "failed to read from socket")
+			return errors.Wrap(err, "failed to read from socket")
 		}
-		data = append(data, buf...)
 	}
-	return data, nil
+	return nil
 }

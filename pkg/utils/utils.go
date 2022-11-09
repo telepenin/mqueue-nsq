@@ -3,6 +3,7 @@ package utils
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"net"
 	"os"
 
@@ -38,4 +39,13 @@ func GetSystemdSocket() (net.Listener, error) {
 	} else {
 		return listeners[0], nil
 	}
+}
+
+// IsSocket returns true if the given path is a socket.
+func IsSocket(path string) bool {
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return fileInfo.Mode().Type() == fs.ModeSocket
 }

@@ -43,7 +43,24 @@ func (e *Event) AckByGroup(ctx context.Context, stream string, group string, id 
 }
 
 func (e *Event) CreateGroup(ctx context.Context, stream string, group string) error {
-	return e.client.XGroupCreate(ctx, stream, group, "$").Err()
+	return e.client.XGroupCreateMkStream(ctx, stream, group, "$").Err()
+}
+
+func (e *Event) ListStream(ctx context.Context) ([]string, error) {
+	keys, _, err := e.client.ScanType(ctx, 0, "", 100, "stream").Result()
+	return keys, err
+}
+
+func (e *Event) ListGroup(ctx context.Context, stream string) ([]string, error) {
+	result, err := e.client.XInfoGroups(ctx, stream).Result()
+	if err != nil {
+		return nil, err
+	}
+	groups := make([]string, 0, len(result))
+	for _, v := range result {
+		groups = append(groups, v.Name)
+	}
+	return groups, nil
 }
 
 func GroupAlreadyExists(err error) bool {
