@@ -16,7 +16,14 @@ make up
 STREAM=foo make producer
 ```
 
-Events will be generated to the stream `foo`
+Events will be generated to the stream `foo` every 1 second.
+
+```bash
+STREAM=foo PAYLOAD_KEYS=10000 GOROUTINES=10 make producer
+```
+
+- `PAYLOAD_KEYS=1000` - number of keys in payload, approximately 1Mb for each message
+- `GOROUTINES=10` - number of goroutines to generate messages independently
 
 ## Run consumers with different groups
 
@@ -27,7 +34,7 @@ STREAM=foo GROUP=2 make consumer
 
 Each consumer will receive the same events from the stream `foo`.
 We will try to use 1-1 mapping between group and consumer, in that case
-each consumer can ack message regardless how to use other consumers. 
+each consumer can ack message regardless how to use other consumers.
 More - https://redis.io/docs/data-types/streams-tutorial/#consumer-groups
 
 ## Run consumers with the same group
@@ -67,7 +74,8 @@ Subscribe for new messages and send wakeup signal (open connect to socket) to th
 make wakeup
 ```
 
-Under the hood it collects all streams and their groups from redis streams, checks the name of group for valid socket file type.
+Under the hood it collects all streams and their groups from redis streams, checks the name of group for valid socket
+file type.
 If it exists -> using it for further wakeup if new messages in stream will appear.
 
 ## Run with systemd

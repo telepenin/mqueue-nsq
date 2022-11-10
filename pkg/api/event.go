@@ -56,7 +56,7 @@ func (e *Event) ListGroup(ctx context.Context, stream string) ([]string, error) 
 	if err != nil {
 		return nil, err
 	}
-	groups := make([]string, 0, len(result))
+	groups := make([]string, len(result))
 	for _, v := range result {
 		groups = append(groups, v.Name)
 	}

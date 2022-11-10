@@ -64,22 +64,26 @@ func main() {
 		payloadKeys = v
 	}
 
-	ticker := time.NewTicker(1 * time.Second)
+	timeout := 1 * time.Second
 	if os.Getenv("TIMEOUT") != "" {
 		value, err := strconv.Atoi(os.Getenv("TIMEOUT"))
 		if err != nil {
 			logger.Error("failed to parse TIMEOUT: ", err)
 			return
 		}
-		ticker = time.NewTicker(time.Duration(value) * time.Millisecond)
+		timeout = time.Duration(value) * time.Millisecond
 	}
 
 	ev := api.NewEvent(client)
 	wg := sync.WaitGroup{}
 	for i := 0; i < goroutines; i++ {
 		wg.Add(1)
+		logger.Debugf("starting goroutine %d", i)
+
 		go func() {
 			defer wg.Done()
+
+			ticker := time.NewTicker(timeout)
 			for {
 				payload := makePayload(payloadKeys)
 				select {
