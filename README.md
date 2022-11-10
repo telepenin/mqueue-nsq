@@ -22,6 +22,9 @@ STREAM=foo GROUP=2 make consumer
 ```
 
 Each consumer will receive the same events from the stream `foo`.
+We will try to use 1-1 mapping between group and consumer, in that case
+each consumer can ack message regardless how to use other consumers. 
+More - https://redis.io/docs/data-types/streams-tutorial/#consumer-groups
 
 ## Run consumers with the same group
 

@@ -24,8 +24,8 @@ copy:
 reload-systemd-consumer:
 	@echo "---- Copying Systemd Files & Reload ----"
 	/usr/bin/cp -f consumer/mqueue-consumer.service /etc/systemd/system/; \
-    /usr/bin/cp -f consumer/mqueue-consumer.socket /etc/systemd/system/; \
-    systemctl daemon-reload;
+	/usr/bin/cp -f consumer/mqueue-consumer.socket /etc/systemd/system/; \
+	systemctl daemon-reload;
 
 .PHONY: producer
 producer:
