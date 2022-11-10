@@ -6,6 +6,10 @@ Start redis in docker
 make up
 ```
 
+## Architecture
+
+![arch](data/images/message-queue.jpeg)
+
 ## Run producer
 
 ```bash
