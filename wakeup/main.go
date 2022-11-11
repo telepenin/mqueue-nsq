@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/go-redis/redis/v9"
 	"github.com/pkg/errors"
@@ -74,8 +75,8 @@ func main() {
 	go func() {
 		defer wg.Done()
 		logger.Info("checking unprocessed messages")
-		for _, stream := range streams {
-			for _, group := range stream {
+		for stream, values := range streams {
+			for _, group := range values {
 				logger.Infow("checking group", "stream", stream, "group", group)
 				if group.HasUnprocessed {
 					logger.Infow("initial wakeup for group is starting...", "stream", stream, "addr", group.Name)
@@ -88,6 +89,22 @@ func main() {
 			}
 		}
 		logger.Info("initial wakeup is done for all groups")
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		count := int64(1000)
+		for {
+			for stream := range streams {
+				if err := event.Trim(ctx, stream, count); err != nil {
+					logger.Error("failed to trim stream: ", err)
+					continue
+				}
+				logger.Infow("stream was trimmed", "stream", stream, "count", count)
+			}
+			time.Sleep(10 * time.Minute)
+		}
 	}()
 
 	wg.Wait()

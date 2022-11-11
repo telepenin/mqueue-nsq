@@ -69,6 +69,7 @@ on the socket `/var/run/sa-consumer.sock`.
 ## Run wakeup service
 
 Subscribe for new messages and send wakeup signal (open connect to socket) to the consumer.
+Also, it checks unprocessed messages for every consumer and wakeup them if needed.
 
 ```bash
 make wakeup
@@ -76,7 +77,11 @@ make wakeup
 
 Under the hood it collects all streams and their groups from redis streams, checks the name of group for valid socket
 file type.
-If it exists -> using it for further wakeup if new messages in stream will appear.
+If it exists ->
+
+1. Check consumers have unprocessed messages - wake them up if messages is exists
+2. Subscribe to new messages for further wakeup consumers.
+3. Trim periodically stream to 1000 messages.
 
 ## Run with systemd
 

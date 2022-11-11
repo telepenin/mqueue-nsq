@@ -71,8 +71,8 @@ func main() {
 		group = sock.Addr().String() // use name of group as socket filename
 
 		go func() {
-			if err = ensureSocketIsEmpty(sock); err != nil {
-				logger.Error("failed to read from socket: ", err)
+			if err = ensureSocketIsDisconnected(sock); err != nil {
+				logger.Error("failed to ensure socket is disconnected: ", err)
 			}
 		}()
 	}
@@ -110,35 +110,17 @@ func main() {
 	}
 }
 
-// ensureSocketIsEmpty trying to read data from socket every 0.2 seconds
-// systemd relaunches the service if the data from socket has not read
-func ensureSocketIsEmpty(sock net.Listener) error {
+// ensureSocketIsDisconnected trying to accept/close connect from socket every 0.2 seconds
+// systemd relaunches the service if it has open connect
+func ensureSocketIsDisconnected(sock net.Listener) error {
 	for {
-		if err := readFromSocket(sock); err != nil {
-			return errors.Wrap(err, "failed to read from socket")
+		conn, err := sock.Accept()
+		if err != nil {
+			return errors.Wrap(err, "failed to accept connection")
+		}
+		if err := conn.Close(); err != nil {
+			return errors.Wrap(err, "failed to close connection")
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-}
-
-// readFromSocket reads all data from socket
-func readFromSocket(sock net.Listener) error {
-	conn, err := sock.Accept()
-	if err != nil {
-		return errors.Wrap(err, "failed to accept connection")
-	}
-	if err := conn.Close(); err != nil {
-		return errors.Wrap(err, "failed to close connection")
-	}
-	//
-	//for {
-	//	buf := make([]byte, 1024) // 1Kb buffer should be enough for our purposes
-	//	_, err = conn.Read(buf)
-	//	if err == io.EOF || err == io.ErrUnexpectedEOF {
-	//		break
-	//	} else if err != nil {
-	//		return errors.Wrap(err, "failed to read from socket")
-	//	}
-	//}
-	return nil
 }

@@ -96,6 +96,10 @@ func (e *Event) ListGroup(ctx context.Context, stream string) ([]Group, error) {
 	return groups, nil
 }
 
+func (e *Event) Trim(ctx context.Context, stream string, count int64) error {
+	return e.client.XTrimMaxLenApprox(ctx, stream, count, 0).Err()
+}
+
 // GroupAlreadyExists returns true if group already exists
 func GroupAlreadyExists(err error) bool {
 	return err.Error() == "BUSYGROUP Consumer Group name already exists"

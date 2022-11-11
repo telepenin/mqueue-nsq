@@ -6,10 +6,11 @@ services:
     environment:
       # ALLOW_EMPTY_PASSWORD is recommended only for development.
       - ALLOW_EMPTY_PASSWORD=yes
-      #command: redis-server --appendonly yes
+    command: redis-server /usr/local/etc/redis/redis.conf
     ports:
       - 6379:6379
     volumes:
+      - ./data/redis.conf:/usr/local/etc/redis/redis.conf
       - 'data:/data'
 
 volumes:
