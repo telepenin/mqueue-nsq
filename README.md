@@ -81,7 +81,7 @@ If it exists ->
 
 1. Check consumers have unprocessed messages - wake them up if messages is exists
 2. Subscribe to new messages for further wakeup consumers.
-3. Trim periodically stream to 1000 messages.
+3. Trim periodically (once in 10 minutes) stream to 1000 messages (approx).
 
 ## Run with systemd
 
