@@ -6,7 +6,6 @@ import (
 	"github.com/go-redis/redis/v9"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
-	"io"
 	"net"
 	"os"
 	"strconv"
@@ -128,16 +127,18 @@ func readFromSocket(sock net.Listener) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to accept connection")
 	}
-	defer conn.Close()
-
-	for {
-		buf := make([]byte, 1024) // 1Kb buffer should be enough for our purposes
-		_, err = conn.Read(buf)
-		if err == io.EOF || err == io.ErrUnexpectedEOF {
-			break
-		} else if err != nil {
-			return errors.Wrap(err, "failed to read from socket")
-		}
+	if err := conn.Close(); err != nil {
+		return errors.Wrap(err, "failed to close connection")
 	}
+	//
+	//for {
+	//	buf := make([]byte, 1024) // 1Kb buffer should be enough for our purposes
+	//	_, err = conn.Read(buf)
+	//	if err == io.EOF || err == io.ErrUnexpectedEOF {
+	//		break
+	//	} else if err != nil {
+	//		return errors.Wrap(err, "failed to read from socket")
+	//	}
+	//}
 	return nil
 }
