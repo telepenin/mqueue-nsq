@@ -103,7 +103,8 @@ func main() {
 				}
 				logger.Infow("stream was trimmed", "stream", stream, "count", count)
 			}
-			time.Sleep(10 * time.Minute)
+			time.Sleep(time.Second)
+			logger.Infow("trimming is done", "approximate count", count)
 		}
 	}()
 

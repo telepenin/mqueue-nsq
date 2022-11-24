@@ -14,7 +14,7 @@ import (
 //NewRedisClient create a new instance of client redis
 func NewRedisClient() (*redis.Client, error) {
 	client := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:6379", os.Getenv("REDIS_HOST")),
+		Addr:     "/var/run/redis.sock",
 		Password: "",
 		DB:       0, // use default DB
 	})

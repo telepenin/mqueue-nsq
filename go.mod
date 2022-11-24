@@ -5,6 +5,7 @@ go 1.17
 require (
 	github.com/DmitriyVTitov/size v1.5.0
 	github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf
+	github.com/dustin/go-humanize v1.0.0
 	github.com/go-redis/redis/v9 v9.0.0-rc.1
 	github.com/pkg/errors v0.8.1
 	github.com/thanhpk/randstr v1.0.4

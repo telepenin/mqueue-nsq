@@ -26,8 +26,11 @@ func NewEvent(client *redis.Client) *Event {
 // Create message using stream
 func (e *Event) Create(ctx context.Context, stream string, message *event.Event) (string, error) {
 	return e.client.XAdd(ctx, &redis.XAddArgs{
-		Stream: stream,
-		Values: message.Payload,
+		Stream:     stream,
+		Values:     message.Payload,
+		NoMkStream: true,
+		MaxLen:     500,
+		Approx:     true,
 	}).Result()
 }
 
@@ -51,11 +54,10 @@ func (e *Event) Read(ctx context.Context, streams []string, timeout time.Duratio
 // ReadByGroup reads messages from stream by specific group
 func (e *Event) ReadByGroup(ctx context.Context, stream string, group string, timeout time.Duration) ([]redis.XMessage, error) {
 	val, err := e.client.XReadGroup(ctx, &redis.XReadGroupArgs{
-		Streams:  []string{stream, ">"},
-		Group:    group,
-		Consumer: "consumer",
-		Count:    10,
-		Block:    timeout,
+		Streams: []string{stream, ">"},
+		Group:   group,
+		Count:   10,
+		Block:   timeout,
 	}).Result()
 	if err != nil {
 		return nil, err
@@ -94,6 +96,10 @@ func (e *Event) ListGroup(ctx context.Context, stream string) ([]Group, error) {
 		})
 	}
 	return groups, nil
+}
+
+func (e *Event) SetMemory(ctx context.Context, value string) error {
+	return e.client.ConfigSet(ctx, "maxmemory", value).Err()
 }
 
 func (e *Event) Trim(ctx context.Context, stream string, count int64) error {

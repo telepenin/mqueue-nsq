@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/DmitriyVTitov/size"
+	"github.com/dustin/go-humanize"
 	"github.com/go-redis/redis/v9"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
@@ -99,7 +101,10 @@ func main() {
 		}
 		logger.Debugln("messages: ", len(messages))
 		for _, v := range messages {
-			logger.Infow("event read: ", "id", v.ID, "payload", v.Values, "stream", stream)
+			logger.Infow("event read: ",
+				"id", v.ID,
+				"size", humanize.Bytes(uint64(size.Of(v.Values))),
+				"stream", stream)
 
 			err = event.AckByGroup(ctx, stream, group, v.ID)
 			if err != nil {

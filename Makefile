@@ -32,6 +32,14 @@ producer:
 	@echo "---- Starting Producer ----"
 	@go run producer/*.go
 
+.PHONY: producers
+producers:
+	bash ./run-producers.sh ${NUMBER}
+
+.PHONY: consumers
+consumers:
+	bash ./run-consumers.sh ${NUMBER}
+
 .PHONY: consumer
 consumer:
 	@echo "---- Starting Consumer ----"

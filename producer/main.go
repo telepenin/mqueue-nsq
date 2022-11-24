@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/DmitriyVTitov/size"
+	"github.com/dustin/go-humanize"
 	"github.com/go-redis/redis/v9"
 	"github.com/thanhpk/randstr"
 	"github.com/tjarratt/babble"
@@ -22,6 +23,8 @@ import (
 var (
 	client *redis.Client
 )
+
+//const maxMemory = 100 * 1024 * 1024 // 100 mb
 
 func init() {
 	var err error
@@ -73,8 +76,14 @@ func main() {
 		}
 		timeout = time.Duration(value) * time.Millisecond
 	}
+	ctx := context.TODO()
 
 	ev := api.NewEvent(client)
+	//if err := ev.SetMemory(ctx, strconv.FormatInt(maxMemory, 10)); err != nil {
+	//	logger.Error("failed to set memory: ", err)
+	//	return
+	//}
+
 	wg := sync.WaitGroup{}
 	for i := 0; i < goroutines; i++ {
 		wg.Add(1)
@@ -88,7 +97,7 @@ func main() {
 				payload := makePayload(payloadKeys)
 				select {
 				case <-ticker.C:
-					val, err := ev.Create(context.TODO(), stream, &event.Event{
+					val, err := ev.Create(ctx, stream, &event.Event{
 						Payload: payload,
 					})
 					if err != nil {
@@ -96,7 +105,7 @@ func main() {
 						return
 					}
 					logger.Infow("event created: ", "id", val, "stream", stream,
-						"size", size.Of(payload))
+						"size", humanize.Bytes(uint64(size.Of(payload))))
 				}
 			}
 		}()
