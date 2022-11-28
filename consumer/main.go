@@ -2,32 +2,33 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"github.com/DmitriyVTitov/size"
-	"github.com/dustin/go-humanize"
-	"github.com/go-redis/redis/v9"
-	"github.com/pkg/errors"
-	"go.uber.org/zap"
+	"encoding/binary"
 	"net"
 	"os"
+	"os/signal"
+	"path"
 	"strconv"
+	"syscall"
 	"time"
 
-	"mqueue/pkg/api"
+	"github.com/dustin/go-humanize"
+	"github.com/nsqio/go-nsq"
+	"github.com/pkg/errors"
+	"go.uber.org/zap"
+
+	"mqueue/pkg/event"
 	"mqueue/pkg/utils"
 )
 
-var (
-	client *redis.Client
-)
+type handler struct {
+	stream string
+	group  string
+	logger *zap.SugaredLogger
 
-func init() {
-	var err error
-	client, err = utils.NewRedisClient()
-	if err != nil {
-		panic(fmt.Sprintf("failed to connect to redis: %v", err))
-	}
+	reset func()
 }
+
+var _ nsq.Handler = &handler{}
 
 func main() {
 	zapLogger, _ := zap.NewDevelopment()
@@ -35,6 +36,12 @@ func main() {
 	logger := zapLogger.Sugar()
 
 	logger.Info("consumer is starting...")
+
+	addr := os.Getenv("NSQ_ADDR")
+	if addr == "" {
+		logger.Error("NSQ_ADDR env var is not set\n")
+		return
+	}
 
 	stream := os.Getenv("STREAM")
 	if stream == "" {
@@ -56,6 +63,9 @@ func main() {
 		timeout = 0
 	}
 
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
 	sock, err := utils.GetSystemdSocket()
 	if err != nil {
 		logger.Error("failed to get systemd socket: ", err)
@@ -70,7 +80,7 @@ func main() {
 		}
 	} else {
 		defer sock.Close()
-		group = sock.Addr().String() // use name of group as socket filename
+		group = path.Base(sock.Addr().String()) // use basename of group as socket filename
 
 		go func() {
 			if err = ensureSocketIsDisconnected(sock); err != nil {
@@ -81,38 +91,68 @@ func main() {
 
 	logger.Debugf("group: %s, stream: %s, timeout: %ds", group, stream, timeout)
 
-	ctx := context.TODO()
-	event := api.NewEvent(client)
-	err = event.CreateGroup(ctx, stream, group)
-	if err != nil && !api.GroupAlreadyExists(err) {
-		logger.Error("failed to create group: ", err)
+	consumer, err := nsq.NewConsumer(stream, group, nsq.NewConfig())
+	if err != nil {
+		logger.Error("failed to create consumer: ", err)
+		return
+	}
+	ctx := context.Background()
+	ctx, _, reset := WithTimeoutReset(ctx, time.Duration(timeout)*time.Second)
+
+	h := &handler{
+		stream: stream,
+		group:  group,
+		logger: logger,
+		reset:  reset,
+	}
+	consumer.AddHandler(h)
+
+	// creates implicitly topic & channel
+	if err = consumer.ConnectToNSQD(addr); err != nil {
+		logger.Error("failed to connect to nsqd: ", err)
 		return
 	}
 
-	for {
-		messages, err := event.ReadByGroup(ctx, stream, group, time.Duration(timeout)*time.Second)
-		if err != nil {
-			if api.TimeoutExceeded(err) {
-				logger.Infof("waiting new messages timeout %ds exceeded", timeout)
-				return
-			}
-			logger.Error("failed to read event: ", err)
-			return
-		}
-		logger.Debugln("messages: ", len(messages))
-		for _, v := range messages {
-			logger.Infow("event read: ",
-				"id", v.ID,
-				"size", humanize.Bytes(uint64(size.Of(v.Values))),
-				"stream", stream)
-
-			err = event.AckByGroup(ctx, stream, group, v.ID)
-			if err != nil {
-				logger.Error("failed to ack event: ", err)
-				return
-			}
-		}
+	select {
+	case <-sigChan:
+	case <-ctx.Done():
 	}
+	logger.Info("consumer is stopping...")
+
+	consumer.Stop()
+	<-consumer.StopChan
+}
+
+func (h *handler) HandleMessage(message *nsq.Message) error {
+	defer h.reset() // reset the awaiting timeout
+
+	e := &event.Event{}
+
+	err := e.UnmarshalBinary(message.Body)
+	if err != nil {
+		return errors.Wrap(err, "failed to unmarshal event")
+	}
+
+	h.logger.Infow("event read: ",
+		"id", string(message.ID[:]),
+		"size", humanize.Bytes(uint64(binary.Size(message.Body))),
+		"stream", h.stream,
+		"group", h.group,
+	)
+
+	// ack by default if returned nil
+	return nil
+}
+
+func WithTimeoutReset(parent context.Context, d time.Duration) (context.Context, context.CancelFunc, func()) {
+	ctx, cancel0 := context.WithCancel(parent)
+	timer := time.AfterFunc(d, cancel0)
+	cancel := func() {
+		cancel0()
+		timer.Stop()
+	}
+	reset := func() { timer.Reset(d) }
+	return ctx, cancel, reset
 }
 
 // ensureSocketIsDisconnected trying to accept/close connect from socket every 0.2 seconds

@@ -1,13 +1,14 @@
 [Unit]
-Description=Socket activation consumer service
-Requires=mqueue-consumer.socket
+Description=Socket activation consumer service (nsq)
+Requires=mqueue-consumer-nsq.socket
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/sa-consumer
+ExecStart=/usr/local/bin/sa-consumer-nsq
 Environment="STREAM=foo"
 Environment="TIMEOUT=30"
+Environment="NSQ_ADDR=localhost:4150"
 StandardOutput=journal
 StandardError=journal
 Restart=on-failure

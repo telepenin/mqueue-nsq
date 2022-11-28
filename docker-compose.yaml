@@ -1,17 +1,14 @@
 version: '2'
 
 services:
-  redis:
-    image: redis:7.0.5
-    environment:
-      # ALLOW_EMPTY_PASSWORD is recommended only for development.
-      - ALLOW_EMPTY_PASSWORD=yes
-    command: redis-server /usr/local/etc/redis/redis.conf
+  nsq:
+    image: nsqio/nsq:v1.2.1
+    command: /nsqd -mem-queue-size=100
     ports:
-      - 6379:6379
+      - 4150:4150
+      - 4151:4151
     volumes:
-      - ./data/redis.conf:/usr/local/etc/redis/redis.conf
-      - 'data:/data'
+      - data:/data
 
 volumes:
-  data: {}
+  data: { }

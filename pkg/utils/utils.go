@@ -1,28 +1,13 @@
 package utils
 
 import (
-	"context"
 	"fmt"
 	"io/fs"
 	"net"
 	"os"
 
 	"github.com/coreos/go-systemd/activation"
-	"github.com/go-redis/redis/v9"
 )
-
-//NewRedisClient create a new instance of client redis
-func NewRedisClient() (*redis.Client, error) {
-	client := redis.NewClient(&redis.Options{
-		Addr:     "/var/run/redis.sock",
-		Password: "",
-		DB:       0, // use default DB
-	})
-
-	ctx := context.TODO()
-	_, err := client.Ping(ctx).Result()
-	return client, err
-}
 
 // GetSystemdSocket returns a socket passed through systemd socket activation.
 // Returned listener may be nil if no sockets were passed.

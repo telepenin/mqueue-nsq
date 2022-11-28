@@ -1,6 +1,6 @@
 ## How to prepare
 
-Start redis in docker
+Start nsqd in docker
 
 ```bash
 make up
@@ -9,6 +9,8 @@ make up
 ## Architecture
 
 ![arch](data/images/message-queue.jpeg)
+
+Design of nsq - https://nsq.io/overview/design.html
 
 ## Run producer
 
@@ -35,7 +37,7 @@ STREAM=foo GROUP=2 make consumer
 Each consumer will receive the same events from the stream `foo`.
 We will try to use 1-1 mapping between group and consumer, in that case
 each consumer can ack message regardless how to use other consumers.
-More - https://redis.io/docs/data-types/streams-tutorial/#consumer-groups
+More -https://nsq.io/overview/design.html
 
 ## Run consumers with the same group
 
@@ -75,21 +77,20 @@ Also, it checks unprocessed messages for every consumer and wakeup them if neede
 make wakeup
 ```
 
-Under the hood it collects all streams and their groups from redis streams, checks the name of group for valid socket
+Under the hood it collects all streams and their groups from nsqd, checks the name of group for valid socket
 file type.
 If it exists ->
 
 1. Check consumers have unprocessed messages - wake them up if messages is exists
 2. Subscribe to new messages for further wakeup consumers.
-3. Trim periodically (once in 10 minutes) stream to 1000 messages (approx).
 
 ## Run with systemd
 
 ```bash
 make reload-systemd-consumer
-systemctl enable mqueue-consumer.socket
-systemctl enable mqueue-consumer.service
-systemctl start mqueue-consumer.socket
+systemctl enable mqueue-consumer-nsq.socket
+systemctl enable mqueue-consumer-nsq.service
+systemctl start mqueue-consumer-nsq.socket
 make wakeup
 ```
 
@@ -98,5 +99,5 @@ Services are ready to receive new messages, to generate a new one - run producer
 Show logs of consumer:
 
 ```bash
-journalctl -u mq-consumer.service
+journalctl -u mqueue-consumer-nsq.service
 ```

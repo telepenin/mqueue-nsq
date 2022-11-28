@@ -1,13 +1,18 @@
 package main
 
 import (
-	"context"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net"
-	"sync"
-	"time"
+	"net/http"
+	"os"
+	"os/signal"
+	"path"
+	"syscall"
 
-	"github.com/go-redis/redis/v9"
+	"github.com/nsqio/go-nsq"
+	"github.com/nsqio/nsq/nsqd"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
@@ -15,16 +20,10 @@ import (
 	"mqueue/pkg/utils"
 )
 
-var (
-	client *redis.Client
-)
-
-func init() {
-	var err error
-	client, err = utils.NewRedisClient()
-	if err != nil {
-		panic(fmt.Sprintf("failed to connect to redis: %v", err))
-	}
+type handler struct {
+	stream string
+	logger *zap.SugaredLogger
+	groups []api.Group
 }
 
 func main() {
@@ -33,82 +32,92 @@ func main() {
 	logger := zapLogger.Sugar()
 
 	logger.Info("wakeup service is starting...")
-	event := api.NewEvent(client)
 
-	ctx := context.TODO()
-	streams, err := mapStream(ctx, event)
-	if err != nil {
-		logger.Error("failed to list streams: ", err)
+	addr := os.Getenv("NSQ_ADDR")
+	if addr == "" {
+		logger.Error("NSQ_ADDR env var is not set\n")
 		return
 	}
-	logger.Debugw("streams was found", "streams", streams)
 
-	wg := sync.WaitGroup{}
-	wg.Add(1)
+	httpAddr := os.Getenv("NSQ_ADDR_HTTP")
+	if httpAddr == "" {
+		logger.Error("NSQ_ADDR_HTTP env var is not set\n")
+		return
+	}
+
+	topics, err := getTopics(httpAddr)
+	if err != nil {
+		logger.Error("failed to get topics: ", err)
+		return
+	}
+
+	listeners := activeListeners(topics)
+	logger.Infow("listeners", "listeners", listeners)
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// wakeup all active listeners if there have unprocessed messages
 	go func() {
-		defer wg.Done()
-		for {
-			// subscribe to new messages in all streams
-			logger.Infow("subscribing to new messages", "streams", listStream(streams))
-
-			result, err := event.Read(ctx, listStream(streams), 0)
-			if err != nil {
-				logger.Error("failed to read from redis: ", err)
-				return
-			}
-			for _, v := range result {
-				groups, ok := streams[v.Stream]
-				if ok {
-					for _, group := range groups {
-						if err := wakeup(group.Name); err != nil {
-							logger.Error("failed to wakeup: ", err)
-							continue
-						}
-						logger.Infow("wakeup is done", "stream", v.Stream, "addr", group.Name)
-					}
-				}
-			}
-		}
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		logger.Info("checking unprocessed messages")
-		for stream, values := range streams {
-			for _, group := range values {
-				logger.Infow("checking group", "stream", stream, "group", group)
+		logger.Infow("pre wakeup services")
+		for topic, groups := range listeners {
+			for _, group := range groups {
 				if group.HasUnprocessed {
-					logger.Infow("initial wakeup for group is starting...", "stream", stream, "addr", group.Name)
-					if err := wakeup(group.Name); err != nil {
-						logger.Error("failed to wakeup: ", err)
-						return
+					logger.Infow("waking up", "topic", topic, "group", group.Name)
+					if err := wakeup(path.Join("/run", group.Name)); err != nil {
+						logger.Errorw("failed to wake up", "topic", topic, "group", group.Name, "error", err)
 					}
-					logger.Infow("initial wakeup is done", "stream", stream, "addr", group.Name)
 				}
 			}
 		}
-		logger.Info("initial wakeup is done for all groups")
 	}()
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		count := int64(1000)
-		for {
-			for stream := range streams {
-				if err := event.Trim(ctx, stream, count); err != nil {
-					logger.Error("failed to trim stream: ", err)
-					continue
-				}
-				logger.Infow("stream was trimmed", "stream", stream, "count", count)
-			}
-			time.Sleep(time.Second)
-			logger.Infow("trimming is done", "approximate count", count)
+	var consumers []*nsq.Consumer
+	// subscribe to all topics with active listeners
+	for topic, groups := range listeners {
+		// create consumer for each topic
+		logger.Infow("subscribing", "topic", topic)
+
+		consumer, err := nsq.NewConsumer(topic, "wakeup", nsq.NewConfig())
+		if err != nil {
+			logger.Error("failed to create consumer: ", err)
+			return
 		}
-	}()
+		h := &handler{
+			stream: topic,
+			logger: logger,
+			groups: groups,
+		}
+		consumer.AddHandler(h)
 
-	wg.Wait()
+		if err := consumer.ConnectToNSQD(addr); err != nil {
+			logger.Error("failed to connect to nsqd: ", err)
+			return
+		}
+
+		consumers = append(consumers, consumer)
+	}
+
+	<-sigChan
+	logger.Info("wakeup service is shutting down...")
+
+	for _, consumer := range consumers {
+		consumer.Stop()
+		<-consumer.StopChan
+	}
+}
+
+func (h *handler) HandleMessage(_ *nsq.Message) error {
+	h.logger.Infow("received message", "stream", h.stream)
+
+	for _, group := range h.groups {
+		h.logger.Info("waking up", "group", group.Name)
+		if err := wakeup(path.Join("/run", group.Name)); err != nil {
+			h.logger.Errorw("failed to wake up", "stream", h.stream, "group", group.Name, "error", err)
+		}
+	}
+	// ack by default if returned nil
+	return nil
 }
 
 // wakeup open connection to the given socket address.
@@ -121,38 +130,40 @@ func wakeup(addr string) error {
 	return nil
 }
 
-// listStreams returns map of stream names and their groups.
-//(group - (name: addr of socket, HasUnprocessed - indicates should we wake up for reading old messages or not) , stream).
-// it collects redis streams and their groups
-// checks the group name as a valid socket file
-func mapStream(ctx context.Context, event *api.Event) (map[string][]api.Group, error) {
-	streams, err := event.ListStream(ctx)
+func getTopics(addr string) ([]nsqd.TopicStats, error) {
+	// TODO: if nsqd would be embedded, we could use nsqd.GetStats() instead of http request
+	resp, err := http.Get(fmt.Sprintf("http://%s/stats?format=json", addr))
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to list streams")
+		return nil, errors.Wrap(err, "failed to get stats")
 	}
-	result := make(map[string][]api.Group)
-	for _, stream := range streams {
-		groups, err := event.ListGroup(ctx, stream)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to list groups for %s", stream)
-		}
-		socketGroups := make([]api.Group, 0, len(groups))
-		for _, group := range groups {
-			if utils.IsSocket(group.Name) {
-				socketGroups = append(socketGroups, group)
-			}
-		}
-		if len(socketGroups) > 0 {
-			result[stream] = socketGroups
-		}
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to read response body")
 	}
-	return result, nil
+	defer resp.Body.Close()
+
+	result := struct {
+		Topics []nsqd.TopicStats `json:"topics"`
+	}{}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, errors.Wrap(err, "failed to unmarshal stats")
+	}
+
+	return result.Topics, nil
 }
 
-func listStream(m map[string][]api.Group) []string {
-	var result []string
-	for k := range m {
-		result = append(result, k)
+func activeListeners(topics []nsqd.TopicStats) map[string][]api.Group {
+	result := make(map[string][]api.Group)
+	for _, topic := range topics {
+		for _, channel := range topic.Channels {
+			if utils.IsSocket(path.Join("/run", channel.ChannelName)) {
+				result[topic.TopicName] = append(result[topic.TopicName], api.Group{
+					Name:           channel.ChannelName,
+					HasUnprocessed: channel.Depth > 0,
+				})
+			}
+		}
 	}
 	return result
 }

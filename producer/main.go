@@ -1,38 +1,22 @@
 package main
 
 import (
-	"context"
+	"encoding/binary"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
-	"sync"
+	"syscall"
 	"time"
 
-	"github.com/DmitriyVTitov/size"
 	"github.com/dustin/go-humanize"
-	"github.com/go-redis/redis/v9"
+	"github.com/nsqio/go-nsq"
 	"github.com/thanhpk/randstr"
 	"github.com/tjarratt/babble"
 	"go.uber.org/zap"
 
-	"mqueue/pkg/api"
 	"mqueue/pkg/event"
-	"mqueue/pkg/utils"
 )
-
-var (
-	client *redis.Client
-)
-
-//const maxMemory = 100 * 1024 * 1024 // 100 mb
-
-func init() {
-	var err error
-	client, err = utils.NewRedisClient()
-	if err != nil {
-		panic(fmt.Sprintf("failed to connect to redis: %v", err))
-	}
-}
 
 func main() {
 	zapLogger, _ := zap.NewDevelopment()
@@ -40,6 +24,12 @@ func main() {
 	logger := zapLogger.Sugar()
 
 	logger.Info("producer is starting...")
+
+	addr := os.Getenv("NSQ_ADDR")
+	if addr == "" {
+		logger.Error("NSQ_ADDR env var is not set\n")
+		return
+	}
 
 	stream := os.Getenv("STREAM")
 	if stream == "" {
@@ -76,41 +66,56 @@ func main() {
 		}
 		timeout = time.Duration(value) * time.Millisecond
 	}
-	ctx := context.TODO()
+	//ctx := context.TODO()
 
-	ev := api.NewEvent(client)
-	//if err := ev.SetMemory(ctx, strconv.FormatInt(maxMemory, 10)); err != nil {
-	//	logger.Error("failed to set memory: ", err)
-	//	return
-	//}
+	producer, err := nsq.NewProducer(addr, nsq.NewConfig())
+	if err != nil {
+		logger.Error("failed to create producer: ", err)
+		return
+	}
 
-	wg := sync.WaitGroup{}
+	stopChan := make(chan bool)
+	termChan := make(chan os.Signal, 1)
+	signal.Notify(termChan, syscall.SIGINT, syscall.SIGTERM)
+
 	for i := 0; i < goroutines; i++ {
-		wg.Add(1)
 		logger.Debugf("starting goroutine %d", i)
 
 		go func() {
-			defer wg.Done()
-
 			ticker := time.NewTicker(timeout)
 			for {
-				payload := makePayload(payloadKeys)
+				e := event.Event{
+					Payload: makePayload(payloadKeys),
+				}
+				bytes, err := e.MarshalBinary()
+				if err != nil {
+					logger.Error("failed to marshal event: ", err)
+					close(stopChan)
+					return
+				}
+
 				select {
 				case <-ticker.C:
-					val, err := ev.Create(ctx, stream, &event.Event{
-						Payload: payload,
-					})
+					err := producer.Publish(stream, bytes)
 					if err != nil {
 						logger.Error("failed to create event: ", err)
+						close(stopChan)
 						return
 					}
-					logger.Infow("event created: ", "id", val, "stream", stream,
-						"size", humanize.Bytes(uint64(size.Of(payload))))
+					logger.Infow("event created: ", "id", "-", "stream", stream,
+						"size", humanize.Bytes(uint64(binary.Size(bytes))))
 				}
 			}
 		}()
 	}
-	wg.Wait()
+
+	select {
+	case <-termChan:
+	case <-stopChan:
+	}
+
+	logger.Info("producer is stopping...")
+	producer.Stop()
 }
 
 func makePayload(keys int) map[string]interface{} {

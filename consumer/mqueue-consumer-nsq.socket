@@ -1,0 +1,13 @@
+[Unit]
+Description=Socket activation consumer socket (nsq)
+PartOf=mqueue-consumer-nsq.service
+
+[Socket]
+ListenStream=/run/mqueue-consumer-nsq.sock
+SocketUser=root
+SocketGroup=root
+SocketMode=0666
+DirectoryMode=0755
+
+[Install]
+WantedBy=sockets.target

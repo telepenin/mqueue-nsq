@@ -1,6 +1,7 @@
 .EXPORT_ALL_VARIABLES:
 
-REDIS_HOST ?= localhost
+NSQ_ADDR ?= localhost:4150
+NSQ_ADDR_HTTP ?= localhost:4151
 
 up:
 	@echo "Starting server..."
@@ -19,12 +20,12 @@ build:
 
 copy:
 	@echo "---- Copying Application ----"
-	@cp -f mqueue-consumer /usr/local/bin/sa-consumer
+	@cp -f mqueue-consumer /usr/local/bin/sa-consumer-nsq
 
 reload-systemd-consumer:
 	@echo "---- Copying Systemd Files & Reload ----"
-	/usr/bin/cp -f consumer/mqueue-consumer.service /etc/systemd/system/; \
-	/usr/bin/cp -f consumer/mqueue-consumer.socket /etc/systemd/system/; \
+	/usr/bin/cp -f consumer/mqueue-consumer-nsq.service /etc/systemd/system/; \
+	/usr/bin/cp -f consumer/mqueue-consumer-nsq.socket /etc/systemd/system/; \
 	systemctl daemon-reload;
 
 .PHONY: producer
@@ -52,13 +53,13 @@ wakeup:
 
 systemd-socket-activate-consumer: #build
 	@echo "---- Starting Socket Activation ----"
-	systemd-socket-activate -l /run/mqueue-consumer.socket \
+	systemd-socket-activate -l /run/mqueue-consumer-nsq.socket \
 		-E STREAM=${STREAM} \
 		-E TIMEOUT=${TIMEOUT} \
-		./mqueue-consumer
+		./mqueue-consumer-nsq
 
 wakeup-consumer:
 	@echo "---- Wake up consumer through socket ----"
-	@printf WAKEUP | socat UNIX-CONNECT:/var/run/mqueue-consumer.socket -
+	@printf WAKEUP | socat UNIX-CONNECT:/var/run/mqueue-consumer-nsq.sock -
 
 
