@@ -25,7 +25,8 @@ type handler struct {
 	group  string
 	logger *zap.SugaredLogger
 
-	reset func()
+	reset      func()
+	timestamps []int64 // checks inordering for messages
 }
 
 var _ nsq.Handler = &handler{}
@@ -91,7 +92,12 @@ func main() {
 
 	logger.Debugf("group: %s, stream: %s, timeout: %ds", group, stream, timeout)
 
-	consumer, err := nsq.NewConsumer(stream, group, nsq.NewConfig())
+	cfg := nsq.NewConfig()
+	//cfg.MaxAttempts = 2
+	//cfg.DefaultRequeueDelay = 5 * time.Second
+	//cfg.BackoffMultiplier = 0
+
+	consumer, err := nsq.NewConsumer(stream, group, cfg)
 	if err != nil {
 		logger.Error("failed to create consumer: ", err)
 		return
@@ -100,10 +106,11 @@ func main() {
 	ctx, _, reset := WithTimeoutReset(ctx, time.Duration(timeout)*time.Second)
 
 	h := &handler{
-		stream: stream,
-		group:  group,
-		logger: logger,
-		reset:  reset,
+		stream:     stream,
+		group:      group,
+		logger:     logger,
+		reset:      reset,
+		timestamps: make([]int64, 0),
 	}
 	consumer.AddHandler(h)
 
@@ -118,6 +125,25 @@ func main() {
 	case <-ctx.Done():
 	}
 	logger.Info("consumer is stopping...")
+
+	// check timestamps
+	isOrdered := true
+	for i := 0; i < len(h.timestamps); i++ {
+		if i == len(h.timestamps)-1 {
+			break
+		}
+		//logger.Debugw("timestamps: ",
+		//	"i", i,
+		//	"ts", h.timestamps[i],
+		//	"next", h.timestamps[i+1],
+		//	"since", time.Since(time.Unix(0, h.timestamps[i])))
+		if h.timestamps[i] > h.timestamps[i+1] {
+			isOrdered = false
+			logger.Errorf("message %d is out of order", i)
+		}
+	}
+
+	logger.Infof("messages are ordered: %t", isOrdered)
 
 	consumer.Stop()
 	<-consumer.StopChan
@@ -140,7 +166,9 @@ func (h *handler) HandleMessage(message *nsq.Message) error {
 		"group", h.group,
 	)
 
+	h.timestamps = append(h.timestamps, message.Timestamp)
 	// ack by default if returned nil
+	//return errors.New("failed to process event")
 	return nil
 }
 
@@ -156,7 +184,7 @@ func WithTimeoutReset(parent context.Context, d time.Duration) (context.Context,
 }
 
 // ensureSocketIsDisconnected trying to accept/close connect from socket every 0.2 seconds
-// systemd relaunches the service if it has open connect
+// systemd relaunches the service if it has open connection
 func ensureSocketIsDisconnected(sock net.Listener) error {
 	for {
 		conn, err := sock.Accept()
