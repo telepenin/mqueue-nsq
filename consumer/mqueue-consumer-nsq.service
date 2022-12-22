@@ -7,7 +7,7 @@ After=network.target
 Type=simple
 ExecStart=/usr/local/bin/sa-consumer-nsq
 Environment="STREAM=foo"
-Environment="TIMEOUT=30"
+Environment="TIMEOUT=60"
 Environment="NSQ_ADDR=localhost:4150"
 StandardOutput=journal
 StandardError=journal

@@ -1,7 +1,7 @@
 .EXPORT_ALL_VARIABLES:
 
-NSQ_ADDR ?= localhost:4150
-NSQ_ADDR_HTTP ?= localhost:4151
+NSQ_ADDR ?= /var/run/nsqd.sock
+NSQ_ADDR_HTTP ?= /var/run/nsqd-http.sock
 
 up:
 	@echo "Starting server..."

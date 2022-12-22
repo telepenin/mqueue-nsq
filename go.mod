@@ -26,3 +26,5 @@ require (
 	github.com/onsi/gomega v1.24.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 )
+
+replace github.com/nsqio/go-nsq => github.com/telepenin/go-nsq v1.1.1

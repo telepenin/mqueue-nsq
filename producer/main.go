@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -74,6 +75,13 @@ func main() {
 		return
 	}
 
+	err = producer.Ping()
+	if err != nil {
+		logger.Error("failed to ping nsqd: ", err)
+		return
+	}
+	logger.Info("ping is successful")
+
 	stopChan := make(chan bool)
 	termChan := make(chan os.Signal, 1)
 	signal.Notify(termChan, syscall.SIGINT, syscall.SIGTERM)
@@ -87,7 +95,7 @@ func main() {
 				e := event.Event{
 					Payload: makePayload(payloadKeys),
 				}
-				bytes, err := e.MarshalBinary()
+				bytes, err := json.Marshal(e)
 				if err != nil {
 					logger.Error("failed to marshal event: ", err)
 					close(stopChan)

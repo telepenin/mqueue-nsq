@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"net"
 	"os"
 	"os/signal"
@@ -16,7 +17,6 @@ import (
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
-	"mqueue/pkg/event"
 	"mqueue/pkg/utils"
 )
 
@@ -152,9 +152,8 @@ func main() {
 func (h *handler) HandleMessage(message *nsq.Message) error {
 	defer h.reset() // reset the awaiting timeout
 
-	e := &event.Event{}
-
-	err := e.UnmarshalBinary(message.Body)
+	var data interface{}
+	err := json.Unmarshal(message.Body, &data)
 	if err != nil {
 		return errors.Wrap(err, "failed to unmarshal event")
 	}
@@ -164,6 +163,7 @@ func (h *handler) HandleMessage(message *nsq.Message) error {
 		"size", humanize.Bytes(uint64(binary.Size(message.Body))),
 		"stream", h.stream,
 		"group", h.group,
+		"data", data,
 	)
 
 	h.timestamps = append(h.timestamps, message.Timestamp)
